@@ -1,0 +1,15 @@
+body {
+    background: #111; color: #eee; font-family: monospace;
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+}
+.container { text-align: center; }
+h1 { color: #00ff9b; font-size: 2.5rem; text-shadow: 0 0 10px #00ff9b; }
+.subtitle { color: #aaa; margin-bottom: 20px; }
+.game-container { position: relative; display: inline-block; }
+canvas { background: #000; border: 2px solid #00ff9b; }
+#score-board {
+    position: absolute; top: 10px; left: 10px; right: 10px;
+    display: flex; justify-content: space-around; color: white;
+    font-size: 1.2em; text-shadow: 1px 1px 2px black;
+}
+.status-bar { margin-top: 15px; color: #888; }
