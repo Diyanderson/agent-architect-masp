@@ -1,108 +1,120 @@
-# Este servidor expõe as ferramentas do jogo para o agente MASP aprender as regras.
-# Ele roda na porta 8000 por padrão (via FastMCP).
-import pygame
-import random
-from mcp.server.fastmcp import FastMCP
+"""
+Módulo para gerenciar o contexto das regras do jogo e comunicação com o oráculo MCP.
+Responsável por aprender e interpretar as regras do jogo.
+"""
 
-# Game settings
-WIDTH, HEIGHT = 400, 400
-BLOCK_SIZE = 40
-FPS = 10
+import requests
+from typing import List, Dict, Any, Optional
+try:
+    from config import Config
+except ImportError:
+    # Fallback se config não estiver disponível
+    class Config:
+        MCP_SERVER_URL = "http://127.0.0.1:8000"
+        REQUEST_TIMEOUT = 30
 
-# Directions
-DIRECTIONS = {
-    'up': (0, -1),
-    'down': (0, 1),
-    'left': (-1, 0),
-    'right': (1, 0)
-}
 
-# MCP server
-mcp = FastMCP("Block Picker Game Rules API")
+class GameRulesContext:
+    """Gerencia o contexto das regras do jogo obtidas do oráculo MCP"""
+    
+    def __init__(self, mcp_server_url: str | None = None):
+        self.mcp_server_url = mcp_server_url if mcp_server_url is not None else Config.MCP_SERVER_URL
+        self.game_tools = []
+        self.tools_description = ""
+    
+    def learn_rules(self) -> bool:
+        """
+        Aprende as regras do jogo consultando o oráculo MCP.
+        
+        Returns:
+            bool: True se conseguiu aprender as regras, False caso contrário
+        """
+        try:
+            print("🧠 Consultando o oráculo MCP para aprender as regras do jogo...")
+            response = requests.get(
+                f"{self.mcp_server_url}/tools",
+                timeout=Config.REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+            
+            self.game_tools = response.json()
+            self._build_tools_description()
+            
+            print(f"📚 Regras aprendidas com sucesso! {len(self.game_tools)} ferramentas disponíveis.")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Erro ao conectar-se ao oráculo MCP: {e}")
+            print(f"   Certifique-se de que o servidor MCP está rodando em {self.mcp_server_url}")
+            return False
+        except Exception as e:
+            print(f"🔥 Erro inesperado ao aprender regras: {e}")
+            return False
+    
+    def _build_tools_description(self):
+        """Constrói a descrição das ferramentas disponíveis"""
+        descriptions = []
+        for tool in self.game_tools:
+            args_str = ', '.join(tool.get('args', []))
+            desc = f"- `{tool['name']}({args_str})`: {tool['description']}"
+            descriptions.append(desc)
+        
+        self.tools_description = "\n".join(descriptions)
+    
+    def get_strategy_prompt(self) -> str:
+        """
+        Gera o prompt para criação de estratégia baseado nas regras aprendidas.
+        
+        Returns:
+            str: Prompt formatado para o modelo de IA
+        """
+        return f"""
+        Você é um agente de IA especialista em programação e jogos. Sua tarefa é criar uma estratégia para um jogo simples.
 
-class Game:
-    def __init__(self):
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        px, py = cols // 2, rows // 2
-        if px == 0: px = 1
-        if py == 0: py = 1
-        self.player_pos = [px * BLOCK_SIZE, py * BLOCK_SIZE]
-        self.block_pos = self.random_block()
-        self.score = 0
-        self.move_command = None
+        **Objetivo do Jogo:**
+        O jogador ('P') deve coletar a recompensa ('R') em um mapa cercado por paredes ('#').
 
-    def random_block(self):
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        while True:
-            x = random.randint(1, cols - 2) * BLOCK_SIZE
-            y = random.randint(1, rows - 2) * BLOCK_SIZE
-            if [x, y] != self.player_pos:
-                return [x, y]
+        **Regras e Ferramentas Disponíveis (via API):**
+        {self.tools_description}
+        O mapa tem coordenadas onde (0,0) é o canto superior esquerdo.
 
-    def move_player(self, direction):
-        if direction in DIRECTIONS:
-            dx, dy = DIRECTIONS[direction]
-            new_x = self.player_pos[0] + dx * BLOCK_SIZE
-            new_y = self.player_pos[1] + dy * BLOCK_SIZE
-            rows = HEIGHT // BLOCK_SIZE
-            cols = WIDTH // BLOCK_SIZE
-            col = new_x // BLOCK_SIZE
-            row = new_y // BLOCK_SIZE
-            if 1 <= col < cols-1 and 1 <= row < rows-1:
-                self.player_pos = [new_x, new_y]
+        **Sua Tarefa:**
+        Crie uma função JavaScript que receba a posição do jogador `playerPos` (um objeto com `x` e `y`) e a posição da recompensa `rewardPos` (também com `x` e `y`) e retorne a próxima melhor direção para o jogador se mover.
+        As direções de retorno possíveis são: "up", "down", "left", "right".
 
-    def update(self):
-        if self.player_pos == self.block_pos:
-            self.score += 1
-            self.block_pos = self.random_block()
+        **Requisitos da Estratégia:**
+        - A lógica deve ser contida em uma única função.
+        - A função deve ser eficiente e direta.
+        - A estratégia deve ser inteligente: mova-se na direção horizontal e depois na vertical (ou vice-versa) para alcançar a recompensa.
+        - Evite movimentos diagonais, pois não são permitidos.
+        - Considere a distância Manhattan para otimizar o caminho.
 
-    def set_move(self, direction):
-        self.move_command = direction
+        **Formato da Saída:**
+        Retorne APENAS o corpo da função JavaScript, sem a declaração `function(...) {{ ... }}`.
 
-    def get_score(self):
-        return self.score
+        **Exemplo de Corpo da Função de Saída:**
+        ```javascript
+        // Estratégia otimizada: primeiro alinha horizontalmente, depois verticalmente
+        if (rx < px) {{
+            return "left";
+        }} else if (rx > px) {{
+            return "right";
+        }}
+        if (ry < py) {{
+            return "up";
+        }} else if (ry > py) {{
+            return "down";
+        }}
+        return null; // Retorna nulo se já estiver na posição
+        ```
 
-    def get_map(self):
-        """Retorna uma string representando o mapa do jogo com cerca (#), O para livre, P para player e R para recompensa."""
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        grid = [['O' for _ in range(cols)] for _ in range(rows)]
-        for y in range(rows):
-            grid[y][0] = '#'; grid[y][cols-1] = '#'
-        for x in range(cols):
-            grid[0][x] = '#'; grid[rows-1][x] = '#'
-        px, py = self.player_pos[0] // BLOCK_SIZE, self.player_pos[1] // BLOCK_SIZE
-        bx, by = self.block_pos[0] // BLOCK_SIZE, self.block_pos[1] // BLOCK_SIZE
-        grid[py][px] = 'P'
-        grid[by][bx] = 'R'
-        return '
-'.join(''.join(row) for row in grid)
-
-game = Game()
-
-@mcp.tool()
-def mover(direcao: str) -> str:
-    """Move o jogador na direção especificada (up, down, left, right)."""
-    if direcao in DIRECTIONS:
-        game.set_move(direcao)
-        return f"Movendo para {direcao}"
-    else:
-        return "Direção inválida. Use: up, down, left, right."
-
-@mcp.tool()
-def pontuacao() -> str:
-    """Retorna a pontuação atual do jogador."""
-    return f"Pontuação: {game.get_score()}"
-
-@mcp.tool()
-def mapa() -> str:
-    """Retorna o desenho do mapa atual (P=player, R=recompensa, O=espaço livre, #=parede)."""
-    return game.get_map()
-
-if __name__ == "__main__":
-    print("🚀 Servidor MCP (Oráculo de Regras) rodando em http://127.0.0.1:8000")
-    print("ℹ️  Este servidor apenas expõe as ferramentas do jogo para o Agente MASP.")
-    print("🛑 Pressione Ctrl+C para parar.")
-    mcp.run() # Usar o padrão, que é HTTP
+        Agora, crie o corpo da função JavaScript com base na sua análise das regras do jogo.
+        """
+    
+    def get_tools(self) -> List[Dict[str, Any]]:
+        """Retorna a lista de ferramentas disponíveis"""
+        return self.game_tools
+    
+    def get_tools_description(self) -> str:
+        """Retorna a descrição formatada das ferramentas"""
+        return self.tools_description

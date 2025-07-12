@@ -1,151 +1,177 @@
-'''
-import os
-import google.generativeai as genai
-import requests
+"""
+Agente MASP (Modelo-Agente-Sistema-Plataforma)
+O cérebro do sistema que aprende regras e gera estratégias de jogo.
+"""
+
 import socketio
 import time
-from dotenv import load_dotenv
+from typing import Optional
 
-# --- Configuração ---
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-MCP_SERVER_URL = "http://127.0.0.1:8000"
-REALTIME_GAME_URL = "http://localhost:3000"
-AGENT_ID = "ai_agent_masp"
-
-# --- Conexão com o Servidor de Jogo (Tabuleiro) ---
-sio = socketio.Client()
-
-@sio.event
-def connect():
-    print("🤖 Agente conectado ao servidor de jogo.")
-    # Após conectar, o agente inicia o processo de aprendizado e implantação.
-    learn_rules_and_deploy_strategy()
-
-@sio.event
-def disconnect():
-    print("🤖 Agente desconectado do servidor de jogo.")
-
-@sio.event
-def strategy_deployed(data):
-    if data['status'] == 'success':
-        print("✅ Estratégia implantada com sucesso no servidor de jogo!")
-    else:
-        print(f"❌ Falha ao implantar estratégia: {data.get('error', 'Erro desconhecido')}")
-    # Desconecta após a tentativa de implantação para não deixar a conexão pendurada.
-    sio.disconnect()
-
-# --- Função Principal do Agente ---
-def learn_rules_and_deploy_strategy():
-    """
-    O coração do agente MASP.
-    1. Conecta-se ao Oráculo (MCP Server) para obter as regras.
-    2. Constrói um prompt para o Gemini com base nas regras.
-    3. Pede ao Gemini para gerar uma estratégia de jogo em JavaScript.
-    4. Implanta a estratégia no Tabuleiro (Real-time Game Server).
-    """
-    try:
-        # 1. Obter as regras do Oráculo (MCP Server)
-        print("🧠 Tentando aprender as regras do jogo no Oráculo MCP...")
-        response = requests.get(f"{MCP_SERVER_URL}/tools")
-        response.raise_for_status()
-        game_tools = response.json()
+try:
+    from config import Config
+except ImportError:
+    class Config:
+        GEMINI_API_KEY = ""
+        MCP_SERVER_URL = "http://127.0.0.1:8000"
+        REALTIME_GAME_URL = "http://localhost:3000"
+        AGENT_ID = "ai_agent_masp"
+        MODEL_NAME = "gemini-pro"
+        REQUEST_TIMEOUT = 30
+        CONNECTION_TIMEOUT = 10
         
-        tools_description = "
-".join([
-            f"- `{tool['name']}({', '.join(tool['args'])})`: {tool['description']}"
-            for tool in game_tools
-        ])
-        print("📚 Regras aprendidas com sucesso!")
+        @classmethod
+        def validate(cls):
+            if not cls.GEMINI_API_KEY or cls.GEMINI_API_KEY == "SUA_CHAVE_DE_API_AQUI":
+                raise ValueError("Chave de API do Gemini não configurada")
+            return True
 
-        # 2. Construir o prompt para o Gemini
-        prompt = f"""
-        Você é um agente de IA especialista em programação e jogos. Sua tarefa é criar uma estratégia para um jogo simples.
+try:
+    from game_rules_context import GameRulesContext
+except ImportError:
+    class GameRulesContext:
+        def __init__(self, mcp_server_url=None):
+            self.mcp_server_url = mcp_server_url or "http://127.0.0.1:8000"
+            self.game_tools = []
+            self.tools_description = ""
+        
+        def learn_rules(self):
+            print("⚠️ GameRulesContext não disponível - usando modo simulado")
+            return True
+        
+        def get_strategy_prompt(self):
+            return "Prompt simulado para estratégia"
 
-        **Objetivo do Jogo:**
-        O jogador ('P') deve coletar a recompensa ('R') em um mapa cercado por paredes ('#').
+try:
+    from strategy_generator import StrategyGenerator
+except ImportError:
+    class StrategyGenerator:
+        def __init__(self):
+            print("⚠️ StrategyGenerator não disponível - usando estratégia padrão")
+        
+        def generate_strategy(self, prompt):
+            print("⚠️ Gerando estratégia padrão")
+            return """
+            if (rx < px) {
+                return "left";
+            } else if (rx > px) {
+                return "right";
+            }
+            if (ry < py) {
+                return "up";
+            } else if (ry > py) {
+                return "down";
+            }
+            return null;
+            """
+        
+        def validate_strategy(self, js_code):
+            return True
 
-        **Regras e Ferramentas Disponíveis (via API):**
-        {tools_description}
-        O mapa tem coordenadas onde (0,0) é o canto superior esquerdo.
 
-        **Sua Tarefa:**
-        Crie uma função JavaScript que receba a posição do jogador `playerPos` (um objeto com `x` e `y`) e a posição da recompensa `rewardPos` (também com `x` e `y`) e retorne a próxima melhor direção para o jogador se mover.
-        As direções de retorno possíveis são: "up", "down", "left", "right".
-
-        **Exemplo de Estratégia (Simples):**
-        Se a recompensa está à direita do jogador (rx > px), a função deve retornar "right".
-
-        **Requisitos da Estratégia:**
-        - A lógica deve ser contida em uma única função.
-        - A função deve ser eficiente e direta.
-        - A estratégia deve ser inteligente: mova-se na direção horizontal e depois na vertical (ou vice-versa) para alcançar a recompensa. Evite movimentos diagonais, pois não são permitidos.
-
-        **Formato da Saída:**
-        Retorne APENAS o corpo da função JavaScript, sem a declaração `function(...) {{ ... }}`.
-
-        **Exemplo de Corpo da Função de Saída:**
-        ```javascript
-        if (ry < py) {{
-            return "up";
-        }} else if (ry > py) {{
-            return "down";
-        }}
-        if (rx < px) {{
-            return "left";
-        }} else if (rx > px) {{
-            return "right";
-        }}
-        return null; // Retorna nulo se já estiver na posição
-        ```
-
-        Agora, crie o corpo da função JavaScript com base na sua análise.
+class MaspAgent:
+    """Agente MASP principal que coordena aprendizado e implantação de estratégias"""
+    
+    def __init__(self):
+        self.sio = socketio.Client()
+        self.rules_context = GameRulesContext()
+        self.strategy_generator = StrategyGenerator()
+        self._setup_socket_handlers()
+    
+    def _setup_socket_handlers(self):
+        """Configura os handlers de eventos do Socket.IO"""
+        
+        @self.sio.event
+        def connect():
+            print("🔗 Agente conectado ao servidor de jogo.")
+            self._learn_and_deploy_strategy()
+        
+        @self.sio.event
+        def disconnect():
+            print("🔌 Agente desconectado do servidor de jogo.")
+        
+        @self.sio.event
+        def strategy_deployed(data):
+            if data['status'] == 'success':
+                print("✅ Estratégia implantada com sucesso no servidor de jogo!")
+            else:
+                print(f"❌ Falha ao implantar estratégia: {data.get('error', 'Erro desconhecido')}")
+            # Desconecta após a tentativa de implantação
+            self.sio.disconnect()
+    
+    def _learn_and_deploy_strategy(self):
         """
-
-        # 3. Gerar a estratégia com o Gemini
-        print("💡 Gerando estratégia com a API Gemini...")
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
-        
-        # Limpa a resposta para extrair apenas o código
-        js_code = response.text.strip()
-        if js_code.startswith("```javascript"):
-            js_code = js_code.split('
-', 1)[1]
-        if js_code.endswith("```"):
-            js_code = js_code.rsplit('
-', 1)[0]
-        
-        print("✨ Estratégia gerada:
-", js_code)
-
-        # 4. Implantar a estratégia no servidor de jogo
-        print("🚀 Implantando a estratégia no servidor de jogo em tempo real...")
-        sio.emit('deploy_strategy', {'code': js_code})
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erro ao conectar-se ao Oráculo MCP: {e}")
-        print("   Por favor, certifique-se de que o 'mcp_server' está rodando em 'http://127.0.0.1:8000'.")
-        sio.disconnect()
-    except Exception as e:
-        print(f"🔥 Ocorreu um erro inesperado: {e}")
-        sio.disconnect()
-
-if __name__ == '__main__':
-    if not os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") == "SUA_CHAVE_DE_API_AQUI":
-        print("🚨 A chave de API do Gemini não foi encontrada.")
-        print("   - Renomeie '.env.example' para '.env'.")
-        print("   - Insira sua chave de API do Google Gemini no arquivo '.env'.")
-    else:
+        Processo principal do agente:
+        1. Aprende as regras do jogo
+        2. Gera uma estratégia
+        3. Implanta a estratégia no servidor
+        """
         try:
-            print("▶️  Iniciando o Agente MASP...")
-            sio.connect(REALTIME_GAME_URL)
-            sio.wait() # Mantém o script rodando enquanto a conexão estiver ativa
+            # 1. Aprender regras do jogo
+            if not self.rules_context.learn_rules():
+                print("❌ Falha ao aprender regras do jogo. Abortando...")
+                self.sio.disconnect()
+                return
+            
+            # 2. Gerar estratégia
+            prompt = self.rules_context.get_strategy_prompt()
+            js_code = self.strategy_generator.generate_strategy(prompt)
+            
+            if not js_code:
+                print("❌ Falha ao gerar estratégia. Abortando...")
+                self.sio.disconnect()
+                return
+            
+            # 3. Validar estratégia
+            if not self.strategy_generator.validate_strategy(js_code):
+                print("❌ Estratégia gerada é inválida. Abortando...")
+                self.sio.disconnect()
+                return
+            
+            # 4. Implantar estratégia
+            print("🚀 Implantando estratégia no servidor de jogo...")
+            self.sio.emit('deploy_strategy', {'code': js_code})
+            
+        except Exception as e:
+            print(f"🔥 Erro inesperado no processo de aprendizado: {e}")
+            self.sio.disconnect()
+    
+    def start(self):
+        """Inicia o agente MASP"""
+        try:
+            print("▶️ Iniciando o Agente MASP...")
+            self.sio.connect(Config.REALTIME_GAME_URL)
+            self.sio.wait()  # Mantém o script rodando
+            
         except socketio.exceptions.ConnectionError as e:
             print(f"❌ Erro ao conectar-se ao servidor de jogo: {e}")
-            print(f"   Por favor, certifique-se de que o 'realtime_game' server está rodando em '{REALTIME_GAME_URL}'.")
+            print(f"   Certifique-se de que o servidor está rodando em {Config.REALTIME_GAME_URL}")
         except Exception as e:
-            print(f"🔥 Ocorreu um erro inesperado durante a inicialização: {e}")
+            print(f"🔥 Erro inesperado durante a inicialização: {e}")
+    
+    def stop(self):
+        """Para o agente MASP"""
+        if self.sio.connected:
+            self.sio.disconnect()
 
-''
+
+def main():
+    """Função principal para executar o agente"""
+    try:
+        # Validar configurações
+        Config.validate()
+        
+        # Criar e iniciar o agente
+        agent = MaspAgent()
+        agent.start()
+        
+    except ValueError as e:
+        print(f"🚨 Erro de configuração: {e}")
+        print("   Configure o arquivo .env com sua chave de API do Gemini")
+    except KeyboardInterrupt:
+        print("\n🛑 Agente interrompido pelo usuário")
+    except Exception as e:
+        print(f"🔥 Erro inesperado: {e}")
+
+
+if __name__ == '__main__':
+    main()

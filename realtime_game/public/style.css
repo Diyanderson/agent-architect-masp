@@ -1,15 +1,194 @@
+/* Estilos para o Agent Architect (MASP) */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 body {
-    background: #111; color: #eee; font-family: monospace;
-    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+    color: #eee;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
 }
-.container { text-align: center; }
-h1 { color: #00ff9b; font-size: 2.5rem; text-shadow: 0 0 10px #00ff9b; }
-.subtitle { color: #aaa; margin-bottom: 20px; }
-.game-container { position: relative; display: inline-block; }
-canvas { background: #000; border: 2px solid #00ff9b; }
+
+.container {
+    text-align: center;
+    max-width: 800px;
+    padding: 20px;
+}
+
+h1 {
+    color: #00ff9b;
+    font-size: 3rem;
+    text-shadow: 0 0 20px #00ff9b, 0 0 40px #00ff9b;
+    margin-bottom: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+.subtitle {
+    color: #aaa;
+    margin-bottom: 30px;
+    font-size: 1.2rem;
+    font-weight: 300;
+}
+
+.game-container {
+    position: relative;
+    display: inline-block;
+    margin: 20px 0;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0, 255, 155, 0.3);
+}
+
+canvas {
+    background: #000;
+    border: 3px solid #00ff9b;
+    border-radius: 10px;
+    display: block;
+    transition: all 0.3s ease;
+}
+
+canvas:hover {
+    box-shadow: 0 0 40px rgba(0, 255, 155, 0.5);
+    transform: scale(1.02);
+}
+
 #score-board {
-    position: absolute; top: 10px; left: 10px; right: 10px;
-    display: flex; justify-content: space-around; color: white;
-    font-size: 1.2em; text-shadow: 1px 1px 2px black;
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    justify-content: space-around;
+    color: white;
+    font-size: 1.3em;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    font-weight: 600;
+    z-index: 10;
 }
-.status-bar { margin-top: 15px; color: #888; }
+
+.status-bar {
+    margin-top: 25px;
+    color: #888;
+    font-size: 1.1rem;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-bar strong {
+    color: #00ff9b;
+    font-weight: 600;
+}
+
+/* Indicador de status de conexão */
+#connection-status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 8px 15px;
+    border-radius: 25px;
+    color: white;
+    font-weight: bold;
+    z-index: 1000;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+/* Animações */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+@keyframes glow {
+    0% { box-shadow: 0 0 20px rgba(0, 255, 155, 0.3); }
+    50% { box-shadow: 0 0 40px rgba(0, 255, 155, 0.6); }
+    100% { box-shadow: 0 0 20px rgba(0, 255, 155, 0.3); }
+}
+
+.game-container {
+    animation: glow 3s ease-in-out infinite;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    h1 {
+        font-size: 2rem;
+    }
+    
+    .subtitle {
+        font-size: 1rem;
+    }
+    
+    canvas {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    #score-board {
+        font-size: 1rem;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+    }
+    
+    .status-bar {
+        font-size: 0.9rem;
+        padding: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    h1 {
+        font-size: 1.5rem;
+    }
+    
+    .subtitle {
+        font-size: 0.9rem;
+    }
+    
+    #score-board {
+        font-size: 0.8rem;
+        flex-direction: column;
+        gap: 5px;
+    }
+}
+
+/* Efeitos de hover */
+.container:hover h1 {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #00ff9b;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #00cc7a;
+}

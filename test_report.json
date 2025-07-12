@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-07-11 20:06:44",
+  "system": "Agent Architect (MASP)",
+  "total_tests": 8,
+  "passed_tests": 4,
+  "failed_tests": 4,
+  "results": {
+    "Ambiente Python": false,
+    "M\u00f3dulos do Agente MASP": false,
+    "M\u00f3dulos do Servidor MCP": false,
+    "Ambiente Node.js": false,
+    "Arquivos do Jogo": true,
+    "Conectividade": true,
+    "Arquivos de Configura\u00e7\u00e3o": true,
+    "Scripts": true
+  },
+  "errors": [
+    "Falha ao importar m\u00f3dulos: No module named 'socketio'",
+    "Falha nos m\u00f3dulos do agente: No module named 'socketio'",
+    "Falha nos m\u00f3dulos do servidor MCP: No module named 'mcp'",
+    "Erro ao verificar Node.js: [WinError 2] O sistema n\u00e3o pode encontrar o arquivo especificado"
+  ]
+}

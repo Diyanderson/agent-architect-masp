@@ -1,2 +1,5 @@
 fastmcp
 pygame
+requests
+flask
+flask-cors

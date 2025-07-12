@@ -1,156 +1,165 @@
+/**
+ * Servidor de Jogo em Tempo Real (Plataforma e Sistema)
+ * Este é o "Tabuleiro" onde o jogo acontece e onde a IA é implantada.
+ */
+
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
+const GameManager = require('./game_manager');
 
+// Configurações do servidor
+const PORT = process.env.PORT || 3000;
+const FPS = 10;
+
+// Inicialização do servidor
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { 
+    cors: { 
+        origin: "*",
+        methods: ["GET", "POST"]
+    } 
+});
 
-// Serve os arquivos do cliente (index.html, etc.)
+// Serve arquivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Constantes do Jogo
-const WIDTH = 400, HEIGHT = 400, BLOCK_SIZE = 40, FPS = 10;
-const DIRECTIONS = { 'up': [0, -1], 'down': [0, 1], 'left': [-1, 0], 'right': [1, 0] };
+// Inicializa o gerenciador do jogo
+const gameManager = new GameManager();
 
-// Classe que gerencia o estado do jogo
-class Game {
-    constructor() {
-        this.players = {}; // Suporta múltiplos jogadores (humanos e IAs)
-        this.rows = HEIGHT / BLOCK_SIZE;
-        this.cols = WIDTH / BLOCK_SIZE;
-        this.block_pos = this.randomBlock();
-    }
-    
-    addPlayer(id) {
-        this.players[id] = { pos: this.centerPos(), score: 0, id: id };
-        console.log(`Player ${id} adicionado.`);
-    }
-
-    removePlayer(id) {
-        if (this.players[id]) {
-            delete this.players[id];
-            console.log(`Player ${id} removido.`);
-        }
-    }
-
-    centerPos() { return [Math.floor(this.cols / 2), Math.floor(this.rows / 2)]; }
-    
-    randomBlock() {
-        let x, y;
-        do {
-            x = Math.floor(Math.random() * (this.cols - 2)) + 1;
-            y = Math.floor(Math.random() * (this.rows - 2)) + 1;
-        } while (this.players && Object.values(this.players).some(p => p.pos[0] === x && p.pos[1] === y));
-        return [x, y];
-    }
-
-    movePlayer(playerId, direction) {
-        if (!this.players[playerId] || !(direction in DIRECTIONS)) return false;
+// Loop principal do jogo
+const gameLoop = setInterval(() => {
+    try {
+        // Executa a estratégia da IA se disponível
+        gameManager.executeAIStrategy();
         
-        const [dx, dy] = DIRECTIONS[direction];
-        const player = this.players[playerId];
-        const new_x = player.pos[0] + dx;
-        const new_y = player.pos[1] + dy;
+        // Atualiza o estado do jogo
+        gameManager.update();
         
-        if (new_x > 0 && new_x < this.cols - 1 && new_y > 0 && new_y < this.rows - 1) {
-            player.pos = [new_x, new_y];
-            return true;
-        }
-        return false;
+        // Envia o estado atualizado para todos os clientes
+        io.emit('update_state', gameManager.getState());
+        
+    } catch (error) {
+        console.error("❌ Erro no loop do jogo:", error);
     }
-
-    update() {
-        for (const playerId in this.players) {
-            const player = this.players[playerId];
-            if (player.pos[0] === this.block_pos[0] && player.pos[1] === this.block_pos[1]) {
-                player.score++;
-                this.block_pos = this.randomBlock();
-                console.log(`Player ${playerId} pontuou! Score: ${player.score}`);
-            }
-        }
-    }
-    
-    getState() {
-        return {
-            players: this.players,
-            block_pos: [this.block_pos[0] * BLOCK_SIZE, this.block_pos[1] * BLOCK_SIZE],
-        };
-    }
-}
-
-const game = new Game();
-let aiStrategyFunction = null; // Armazena a função gerada pela IA
-let aiAgentSocketId = null;    // Armazena o ID do socket do agente
-
-// Loop do jogo
-setInterval(() => {
-    // Se a IA implantou uma estratégia, ela joga
-    if (aiStrategyFunction && game.players['ai_agent_masp']) {
-        const aiPlayer = game.players['ai_agent_masp'];
-        const move = aiStrategyFunction({ x: aiPlayer.pos[0], y: aiPlayer.pos[1] }, { x: game.block_pos[0], y: game.block_pos[1] });
-        if (move) {
-            game.movePlayer('ai_agent_masp', move);
-        }
-    }
-    game.update(); 
-    io.emit('update_state', game.getState());
 }, 1000 / FPS);
 
-
+// Gerenciamento de conexões Socket.IO
 io.on('connection', (socket) => {
     console.log(`➕ Cliente conectado: ${socket.id}`);
-    game.addPlayer(socket.id);
-    io.emit('update_state', game.getState());
+    
+    // Adiciona o jogador ao jogo
+    gameManager.addPlayer(socket.id);
+    io.emit('update_state', gameManager.getState());
 
+    // Handler para movimentos do jogador
     socket.on('mover', (data) => {
-        if (game.movePlayer(socket.id, data.direcao)) {
-            io.emit('update_state', game.getState());
+        if (gameManager.movePlayer(socket.id, data.direcao)) {
+            console.log(`🎮 Jogador ${socket.id} moveu para ${data.direcao}`);
+            io.emit('update_state', gameManager.getState());
+        } else {
+            console.log(`❌ Movimento inválido: ${data.direcao} por ${socket.id}`);
         }
     });
 
+    // Handler para implantação de estratégia da IA
     socket.on('deploy_strategy', (data) => {
         console.log('🤖 Nova estratégia recebida do socket:', socket.id);
         
-        game.removePlayer(socket.id);
+        const result = gameManager.deployAIStrategy(data.code, socket.id);
+        socket.emit('strategy_deployed', result);
         
-        if (aiAgentSocketId && game.players['ai_agent_masp']) {
-            game.removePlayer('ai_agent_masp');
-            console.log('🤖 Removendo agente antigo.');
-        }
-
-        try {
-            aiStrategyFunction = new Function('playerPos', 'rewardPos', `
-                const { x: px, y: py } = playerPos;
-                const { x: rx, y: ry } = rewardPos;
-                ${data.code}
-            `);
-            game.addPlayer('ai_agent_masp');
-            aiAgentSocketId = socket.id;
-            console.log(`✅ Estratégia implantada. Agente MASP (${aiAgentSocketId}) está ativo.`);
-            socket.emit('strategy_deployed', { status: 'success' });
-        } catch (e) {
-            console.error("❌ Erro ao compilar estratégia:", e);
-            socket.emit('strategy_deployed', { status: 'failed', error: e.message });
+        if (result.status === 'success') {
+            console.log('✅ Estratégia implantada com sucesso!');
+            io.emit('update_state', gameManager.getState());
+        } else {
+            console.log('❌ Falha ao implantar estratégia:', result.error);
         }
     });
 
+    // Handler para desconexão
     socket.on('disconnect', () => {
         console.log(`➖ Cliente desconectado: ${socket.id}`);
-        if (socket.id === aiAgentSocketId) {
+        
+        // Se era o agente IA, limpa a estratégia
+        if (socket.id === gameManager.aiAgentSocketId) {
             console.log('🤖 Agente MASP desconectado.');
-            game.removePlayer('ai_agent_masp');
-            aiStrategyFunction = null;
-            aiAgentSocketId = null;
+            gameManager.clearAIStrategy();
         } else {
-            game.removePlayer(socket.id);
+            gameManager.removePlayer(socket.id);
         }
-        io.emit('update_state', game.getState());
+        
+        io.emit('update_state', gameManager.getState());
+    });
+
+    // Handler para solicitar estatísticas
+    socket.on('get_stats', () => {
+        const stats = gameManager.getStats();
+        console.log('📊 Estatísticas solicitadas:', stats);
+        socket.emit('game_stats', stats);
     });
 });
 
-const PORT = 3000;
+// Rota de status da API
+app.get('/api/status', (req, res) => {
+    const status = {
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        stats: gameManager.getStats(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage()
+    };
+    
+    console.log('📊 Status da API solicitado');
+    res.json(status);
+});
+
+// Rota de saúde
+app.get('/health', (req, res) => {
+    console.log('❤️ Health check solicitado');
+    res.json({ 
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
+// Inicialização do servidor
 server.listen(PORT, () => {
     console.log(`🎮 Real-Time Game Server rodando em http://localhost:${PORT}`);
+    console.log(`📊 API Status: http://localhost:${PORT}/api/status`);
+    console.log(`❤️ Health Check: http://localhost:${PORT}/health`);
+    console.log(`🛑 Pressione Ctrl+C para parar.`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\n🛑 Encerrando servidor...');
+    clearInterval(gameLoop);
+    server.close(() => {
+        console.log('✅ Servidor encerrado com sucesso.');
+        process.exit(0);
+    });
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 Servidor recebeu sinal de término...');
+    clearInterval(gameLoop);
+    server.close(() => {
+        console.log('✅ Servidor encerrado com sucesso.');
+        process.exit(0);
+    });
+});
+
+// Tratamento de erros não capturados
+process.on('uncaughtException', (error) => {
+    console.error('🔥 Erro não capturado:', error);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Promise rejeitada não tratada:', reason);
+    process.exit(1);
 });

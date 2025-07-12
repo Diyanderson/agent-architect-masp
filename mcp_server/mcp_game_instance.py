@@ -1,107 +1,189 @@
-# Este servidor expõe as ferramentas do jogo para o agente MASP aprender as regras.
-# Ele roda na porta 8000 por padrão (via FastMCP).
-import pygame
+"""
+Servidor MCP (Modelo) que expõe as regras do jogo para o agente MASP.
+Este é o "Oráculo" que o agente consulta para aprender como jogar.
+"""
+
+from flask import Flask, jsonify
+from flask_cors import CORS
 import random
-from mcp.server.fastmcp import FastMCP
 
-# Game settings
-WIDTH, HEIGHT = 400, 400
-BLOCK_SIZE = 40
-FPS = 10
+# Configurações do servidor
+SERVER_NAME = "Block Picker Game Rules API"
+SERVER_DESCRIPTION = "API que expõe as regras e ferramentas do jogo Block Picker"
 
-# Directions
-DIRECTIONS = {
-    'up': (0, -1),
-    'down': (0, 1),
-    'left': (-1, 0),
-    'right': (1, 0)
-}
+# Inicializa o servidor Flask
+app = Flask(__name__)
+CORS(app)
 
-# MCP server
-mcp = FastMCP("Block Picker Game Rules API")
-
-class Game:
+# Simulação do motor do jogo
+class SimpleGameEngine:
     def __init__(self):
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        px, py = cols // 2, rows // 2
-        if px == 0: px = 1
-        if py == 0: py = 1
-        self.player_pos = [px * BLOCK_SIZE, py * BLOCK_SIZE]
-        self.block_pos = self.random_block()
+        self.directions = ['up', 'down', 'left', 'right']
+        self.player_pos = [5, 5]
+        self.block_pos = [3, 3]
         self.score = 0
-        self.move_command = None
-
-    def random_block(self):
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        while True:
-            x = random.randint(1, cols - 2) * BLOCK_SIZE
-            y = random.randint(1, rows - 2) * BLOCK_SIZE
-            if [x, y] != self.player_pos:
-                return [x, y]
-
-    def move_player(self, direction):
-        if direction in DIRECTIONS:
-            dx, dy = DIRECTIONS[direction]
-            new_x = self.player_pos[0] + dx * BLOCK_SIZE
-            new_y = self.player_pos[1] + dy * BLOCK_SIZE
-            rows = HEIGHT // BLOCK_SIZE
-            cols = WIDTH // BLOCK_SIZE
-            col = new_x // BLOCK_SIZE
-            row = new_y // BLOCK_SIZE
-            if 1 <= col < cols-1 and 1 <= row < rows-1:
-                self.player_pos = [new_x, new_y]
-
-    def update(self):
-        if self.player_pos == self.block_pos:
-            self.score += 1
-            self.block_pos = self.random_block()
-
+    
     def set_move(self, direction):
-        self.move_command = direction
-
+        if direction in self.directions:
+            return True
+        return False
+    
     def get_score(self):
         return self.score
-
+    
     def get_map(self):
-        """Retorna uma string representando o mapa do jogo com cerca (#), O para livre, P para player e R para recompensa."""
-        rows = HEIGHT // BLOCK_SIZE
-        cols = WIDTH // BLOCK_SIZE
-        grid = [['O' for _ in range(cols)] for _ in range(rows)]
-        for y in range(rows):
-            grid[y][0] = '#'; grid[y][cols-1] = '#'
-        for x in range(cols):
-            grid[0][x] = '#'; grid[rows-1][x] = '#'
-        px, py = self.player_pos[0] // BLOCK_SIZE, self.player_pos[1] // BLOCK_SIZE
-        bx, by = self.block_pos[0] // BLOCK_SIZE, self.block_pos[1] // BLOCK_SIZE
-        grid[py][px] = 'P'
-        grid[by][bx] = 'R'
-        return '\n'.join(''.join(row) for row in grid)
+        return """
+        ####################
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        #OOOOOOOOOOOOOOOOOO#
+        ####################
+        """
+    
+    def get_player_position(self):
+        return self.player_pos
+    
+    def get_block_position(self):
+        return self.block_pos
+    
+    def get_valid_directions(self):
+        return self.directions
 
-game = Game()
+# Inicializa o motor do jogo
+game_engine = SimpleGameEngine()
 
-@mcp.tool()
-def mover(direcao: str) -> str:
-    """Move o jogador na direção especificada (up, down, left, right)."""
-    if direcao in DIRECTIONS:
-        game.set_move(direcao)
-        return f"Movendo para {direcao}"
+# Rotas da API
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    """Retorna todas as ferramentas disponíveis"""
+    tools = [
+        {
+            "name": "mover",
+            "description": "Move o jogador na direção especificada",
+            "args": ["direcao"]
+        },
+        {
+            "name": "pontuacao",
+            "description": "Retorna a pontuação atual do jogador",
+            "args": []
+        },
+        {
+            "name": "mapa",
+            "description": "Retorna o desenho do mapa atual",
+            "args": []
+        },
+        {
+            "name": "posicao_jogador",
+            "description": "Retorna a posição atual do jogador",
+            "args": []
+        },
+        {
+            "name": "posicao_recompensa",
+            "description": "Retorna a posição atual da recompensa",
+            "args": []
+        },
+        {
+            "name": "direcoes_validas",
+            "description": "Retorna as direções válidas para movimento",
+            "args": []
+        },
+        {
+            "name": "regras_jogo",
+            "description": "Retorna as regras básicas do jogo",
+            "args": []
+        }
+    ]
+    return jsonify(tools)
+
+@app.route('/mover/<direcao>', methods=['GET'])
+def mover(direcao):
+    """Move o jogador na direção especificada"""
+    if direcao in game_engine.directions:
+        game_engine.set_move(direcao)
+        return jsonify({"message": f"🎮 Movendo para {direcao}"})
     else:
-        return "Direção inválida. Use: up, down, left, right."
+        valid_dirs = ", ".join(game_engine.get_valid_directions())
+        return jsonify({"error": f"❌ Direção inválida. Use: {valid_dirs}"}), 400
 
-@mcp.tool()
-def pontuacao() -> str:
-    """Retorna a pontuação atual do jogador."""
-    return f"Pontuação: {game.get_score()}"
+@app.route('/pontuacao', methods=['GET'])
+def pontuacao():
+    """Retorna a pontuação atual do jogador"""
+    return jsonify({"pontuacao": f"🏆 Pontuação: {game_engine.get_score()}"})
 
-@mcp.tool()
-def mapa() -> str:
-    """Retorna o desenho do mapa atual (P=player, R=recompensa, O=espaço livre, #=parede)."""
-    return game.get_map()
+@app.route('/mapa', methods=['GET'])
+def mapa():
+    """Retorna o desenho do mapa atual"""
+    return jsonify({"mapa": f"🗺️ Mapa atual:\n{game_engine.get_map()}"})
+
+@app.route('/posicao_jogador', methods=['GET'])
+def posicao_jogador():
+    """Retorna a posição atual do jogador"""
+    pos = game_engine.get_player_position()
+    return jsonify({"posicao": f"👤 Posição do jogador: ({pos[0]}, {pos[1]})"})
+
+@app.route('/posicao_recompensa', methods=['GET'])
+def posicao_recompensa():
+    """Retorna a posição atual da recompensa"""
+    pos = game_engine.get_block_position()
+    return jsonify({"posicao": f"🎯 Posição da recompensa: ({pos[0]}, {pos[1]})"})
+
+@app.route('/direcoes_validas', methods=['GET'])
+def direcoes_validas():
+    """Retorna as direções válidas para movimento"""
+    directions = game_engine.get_valid_directions()
+    return jsonify({"direcoes": f"🔄 Direções válidas: {', '.join(directions)}"})
+
+@app.route('/regras_jogo', methods=['GET'])
+def regras_jogo():
+    """Retorna as regras básicas do jogo"""
+    regras = """
+    📖 REGRAS DO JOGO BLOCK PICKER:
+    
+    1. 🎯 OBJETIVO: Coletar o máximo de blocos vermelhos (R) possível
+    2. 🎮 MOVIMENTO: Use as direções up, down, left, right
+    3. 🚫 LIMITES: Não pode sair do tabuleiro (cercado por paredes #)
+    4. 🏆 PONTUAÇÃO: Cada bloco coletado adiciona 1 ponto
+    5. 👤 POSIÇÃO: O jogador é representado por 'P' no mapa
+    6. 🎯 RECOMPENSA: Os blocos vermelhos são representados por 'R'
+    7. ⬜ ESPAÇOS LIVRES: Representados por 'O'
+    8. 🧱 PAREDES: Representadas por '#'
+    
+    O mapa usa coordenadas onde (0,0) é o canto superior esquerdo.
+    """
+    return jsonify({"regras": regras})
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Endpoint de saúde"""
+    return jsonify({"status": "healthy", "service": SERVER_NAME})
+
+def main():
+    """Função principal do servidor MCP"""
+    print("🚀 Servidor MCP (Oráculo de Regras) iniciando...")
+    print(f"📡 Nome: {SERVER_NAME}")
+    print(f"📝 Descrição: {SERVER_DESCRIPTION}")
+    print("🔧 Ferramentas disponíveis:")
+    print("   🎮 mover(direcao): Move o jogador")
+    print("   🏆 pontuacao(): Retorna a pontuação")
+    print("   🗺️ mapa(): Mostra o mapa atual")
+    print("   👤 posicao_jogador(): Posição do jogador")
+    print("   🎯 posicao_recompensa(): Posição da recompensa")
+    print("   🔄 direcoes_validas(): Lista de direções válidas")
+    print("   📖 regras_jogo(): Regras do jogo")
+    print("🛑 Pressione Ctrl+C para parar.")
+    
+    try:
+        app.run(host='127.0.0.1', port=8000, debug=False)
+    except KeyboardInterrupt:
+        print("\n🛑 Servidor MCP interrompido pelo usuário")
+    except Exception as e:
+        print(f"🔥 Erro no servidor MCP: {e}")
 
 if __name__ == "__main__":
-    print("Servidor MCP (Oraculo de Regras) rodando em http://127.0.0.1:8000")
-    print("Este servidor apenas expoe as ferramentas do jogo para o Agente MASP.")
-    print("Pressione Ctrl+C para parar.")
-    mcp.run() # Usar o padrão, que é HTTP
+    main()
